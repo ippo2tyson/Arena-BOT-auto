@@ -58,7 +58,7 @@ async function notifierDiscordAvecImage(message, imageBuffer) {
 }
 
 // ==========================================
-// ⚔️ LOGIQUE DE COMBAT ET REPORTING
+// ⚔️ LOGIQUE PRINCIPALE
 // ==========================================
 async function lancerCycleDeCombats() {
     console.log(`[${new Date().toLocaleTimeString()}] Lancement du cycle...`);
@@ -90,18 +90,18 @@ async function lancerCycleDeCombats() {
         const nbCombats = combatsDispo !== null ? combatsDispo : 0;
         console.log(`Nombre de combats détectés : ${nbCombats}/10`);
 
-        // 3. VÉRIFICATION DE LA CONDITION STRICTE (Minimum 8)
+        // 3. DÉCISION DU NOMBRE DE COMBATS À MENER
+        let combatsAFaire = 0;
         if (nbCombats < 8) {
-            console.log(`Seulement ${nbCombats}/10 combats disponibles (minimum requis : 8). Le bot se rendort silencieusement.`);
-            await browser.close();
-            return; // Fin de l'exécution, Discord ne sera pas notifié
+            console.log(`Moins de 8 combats dispos. On passe directement à l'audit du profil.`);
+        } else {
+            console.log(`Condition remplie. Lancement strict de 6 combats.`);
+            combatsAFaire = 6;
         }
         
-        // 4. LANCEMENT STRICT DE 6 COMBATS
-        console.log(`Condition remplie. Lancement strict de 6 combats.`);
-        
-        for (let i = 1; i <= 6; i++) {
-            console.log(`Combat ${i}/6...`);
+        // 4. BOUCLE DE COMBAT (Ne s'exécute que si combatsAFaire = 6)
+        for (let i = 1; i <= combatsAFaire; i++) {
+            console.log(`Combat ${i}/${combatsAFaire}...`);
 
             await page.waitForFunction(() => {
                 const boutons = Array.from(document.querySelectorAll('button'));
@@ -129,7 +129,7 @@ async function lancerCycleDeCombats() {
             
             await attendreAleatoire(5500, 7000); 
 
-            // Comptage des victoires et défaites pour le tableau de bord
+            // Comptage des victoires et défaites
             const texteEcran = await page.evaluate(() => document.body.innerText.toLowerCase());
             if (texteEcran.includes('victoire')) {
                 victoires++;
@@ -138,13 +138,13 @@ async function lancerCycleDeCombats() {
             }
         }
         
-        // 5. NAVIGATION VERS LE PROFIL (Piste d'audit)
+        // 5. NAVIGATION VERS LE PROFIL (Cette étape se fera toujours)
         console.log("Navigation vers l'historique des combats...");
         
         // Clic sur l'onglet CLASSEMENT
         await page.evaluate(() => {
             const elements = Array.from(document.querySelectorAll('div, span, button'));
-            const onglet = elements.find(el => el.textContent.trim() === 'CLASSEMENT');
+            const onglet = elements.find(el => el.textContent.trim().toUpperCase() === 'CLASSEMENT');
             if (onglet) onglet.click();
         });
         await attendreAleatoire(2000, 3000);
@@ -152,7 +152,8 @@ async function lancerCycleDeCombats() {
         // Clic sur votre profil
         await page.evaluate(() => {
             const elements = Array.from(document.querySelectorAll('div, span'));
-            const profil = elements.find(el => el.textContent.includes('akaimed'));
+            // Recherche souple pour être sûr de trouver 'akaimed'
+            const profil = elements.find(el => el.textContent.toLowerCase().includes('akaimed'));
             if (profil) profil.click();
         });
         await attendreAleatoire(2000, 3000);
@@ -164,12 +165,18 @@ async function lancerCycleDeCombats() {
             if (index !== -1) {
                 return texteComplet.substring(index).trim();
             }
-            return "Historique indisponible sur la page.";
+            return "Historique introuvable. (Le clic sur le profil a échoué ou l'historique est vide)";
         });
 
         // 6. RAPPORT FINAL ET ENVOI
         const capture = await page.screenshot();
-        const rapport = `✅ **Cycle terminé !**\n\n📊 **RÉSUMÉ DES 6 COMBATS :**\n🏆 Victoires : ${victoires}\n💀 Défaites : ${defaites}\n\n📝 **EXTRAIT DU PROFIL (5 derniers combats) :**\n\`\`\`text\n${historique}\n\`\`\``;
+        
+        // On adapte le titre du message Discord selon s'il y a eu des combats ou non
+        const titreMessage = combatsAFaire > 0 
+            ? `✅ **Cycle de 6 combats terminé !**` 
+            : `ℹ️ **Audit de routine (Énergie < 8)**`;
+
+        const rapport = `${titreMessage}\n\n📊 **RÉSUMÉ DE LA SESSION :**\n🏆 Victoires : ${victoires}\n💀 Défaites : ${defaites}\n\n📝 **EXTRAIT DU PROFIL (5 derniers combats) :**\n\`\`\`text\n${historique}\n\`\`\``;
         
         await notifierDiscordAvecImage(rapport, capture);
         
