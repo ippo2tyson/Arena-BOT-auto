@@ -1,0 +1,28 @@
+name: Bot Auto Arena
+
+on:
+  schedule:
+    # S'exécute à la minute 0, toutes les 2 heures (00:00, 02:00, 04:00...)
+    - cron: '0 */2 * * *'
+  workflow_dispatch: # Permet de lancer un test manuellement
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v3
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Installer les dépendances
+        run: npm install
+
+      - name: Lancer le script
+        run: node index.js
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          OPA_SESSION: ${{ secrets.OPA_SESSION }}
