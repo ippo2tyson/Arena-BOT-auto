@@ -39,7 +39,7 @@ const attendre = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 // ==========================================
 async function lancerCycleDeCombats() {
     console.log(`[${new Date().toLocaleTimeString()}] Lancement du cycle...`);
-    await notifierDiscord("⚔️ **Nouveau cycle :** Lancement de 6 combats depuis GitHub Actions.");
+    await notifierDiscord("⚔️ **Nouveau cycle :** Lancement de 6 combats depuis GitHub Actions @itsmmed.");
     
     const browser = await puppeteer.launch({ 
         headless: true, 
@@ -69,7 +69,7 @@ async function lancerCycleDeCombats() {
             await attendre(5000); 
         }
         
-        await notifierDiscord("✅ **Cycle terminé :** 6 combats validés. À dans 2 heures !");
+        await notifierDiscord("✅ **Cycle terminé :** 6 combats validés. À dans 2 heures ! @itsmmed");
         
     } catch (error) {
         console.error("Erreur pendant le cycle:", error);
