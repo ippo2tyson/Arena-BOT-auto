@@ -79,10 +79,10 @@ async function lancerCycleDeCombats() {
         await page.goto(URL_DU_JEU, { waitUntil: 'networkidle2' });
         await attendreAleatoire(2000, 3000);
 
-        // 🆕 NOUVEAUTÉ : Rafraîchissement forcé (F5) pour actualiser l'énergie serveur
+        // Rafraîchissement forcé (F5) pour actualiser l'énergie serveur
         console.log("Rafraîchissement de la page pour synchroniser l'énergie...");
         await page.reload({ waitUntil: 'networkidle2' });
-        await attendreAleatoire(3000, 4000); // Laisse le temps au texte de s'afficher
+        await attendreAleatoire(3000, 4000); 
 
         // 2. LECTURE DE L'ÉNERGIE DISPONIBLE
         const combatsDispo = await page.evaluate(() => {
@@ -95,11 +95,11 @@ async function lancerCycleDeCombats() {
         const nbCombats = combatsDispo !== null ? combatsDispo : 0;
         console.log(`Nombre de combats détectés après rafraîchissement : ${nbCombats}/10`);
 
-        // 3. DÉCISION DU NOMBRE DE COMBATS (Garde toujours 1 de réserve, Max 8)
+        // 3. DÉCISION DU NOMBRE DE COMBATS (Garde 1 en réserve, Max 8)
         let combatsAFaire = 0;
         
         if (nbCombats <= 1) {
-            console.log(`Seulement ${nbCombats} combat(s) disponible(s). On en garde 1 en réserve. On passe au Classement.`);
+            console.log(`Seulement ${nbCombats} combat(s) disponible(s). On en garde 1 en réserve.`);
         } else {
             combatsAFaire = Math.min(nbCombats - 1, 8);
             console.log(`Calcul : ${nbCombats} dispos -> 1 en réserve = ${nbCombats - 1}. Plafond max : 8. Lancement de ${combatsAFaire} combat(s).`);
@@ -109,7 +109,7 @@ async function lancerCycleDeCombats() {
         for (let i = 1; i <= combatsAFaire; i++) {
             console.log(`Combat ${i}/${combatsAFaire}...`);
 
-            // Attente Intelligente (Timeout 10s si le bouton n'apparaît pas)
+            // Attente Intelligente
             await page.waitForFunction(() => {
                 const boutons = Array.from(document.querySelectorAll('button'));
                 return boutons.some(b => 
@@ -130,14 +130,15 @@ async function lancerCycleDeCombats() {
                 if (cible) cible.click();
             });
             
-            // Pause Anti-ban pour transition
+            // Pause pour laisser l'animation "Découdre" apparaître
             await attendreAleatoire(2000, 2500);
             
-            // Clic au centre "Découdre"
+            // Clic au centre 
             await page.mouse.click(640, 360);
             
-            // Pause Anti-ban du combat
-            await attendreAleatoire(5500, 7000); 
+            // ⚠️ TEMPS DE COMBAT AUGMENTÉ (12 à 15 secondes) POUR NE PAS COUPER L'ANIMATION
+            console.log("Attente de la fin du combat...");
+            await attendreAleatoire(12000, 15000); 
 
             // Comptage des victoires et défaites
             const texteEcran = await page.evaluate(() => document.body.innerText.toLowerCase());
@@ -152,16 +153,16 @@ async function lancerCycleDeCombats() {
         console.log("Navigation vers le Classement pour la capture d'écran...");
         
         await page.evaluate(() => {
-            const elements = Array.from(document.querySelectorAll('*'));
-            const onglet = elements.find(el => el.textContent.trim().toUpperCase() === 'CLASSEMENT' && el.children.length === 0);
+            const elements = Array.from(document.querySelectorAll('div, span, p'));
+            const onglet = elements.find(el => el.textContent.trim().toUpperCase() === 'CLASSEMENT');
             if (onglet) {
                 onglet.click();
                 if (onglet.parentElement) onglet.parentElement.click();
             }
         });
         
-        // On attend un peu plus longtemps pour que les avatars du classement s'affichent bien
-        await attendreAleatoire(3000, 4500);
+        // On attend pour que les avatars du classement s'affichent bien
+        await attendreAleatoire(4000, 5000);
 
         // 6. RAPPORT FINAL ET ENVOI
         const capture = await page.screenshot();
