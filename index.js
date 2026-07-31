@@ -76,7 +76,7 @@ async function lancerCycleDeCombats() {
         await page.setCookie(...COOKIES);
         await page.goto(URL_DU_JEU, { waitUntil: 'networkidle2' });
         
-        // 1. Laisser le temps à l'interface de charger
+        // 1. Laisser le temps à l'interface de charger (Anti-Ban)
         await attendreAleatoire(2000, 3000);
 
         // 2. LECTURE DE L'ÉNERGIE DISPONIBLE
@@ -90,19 +90,22 @@ async function lancerCycleDeCombats() {
         const nbCombats = combatsDispo !== null ? combatsDispo : 0;
         console.log(`Nombre de combats détectés : ${nbCombats}/10`);
 
-        // 3. DÉCISION DU NOMBRE DE COMBATS À MENER
+        // 3. NOUVELLE DÉCISION DYNAMIQUE DU NOMBRE DE COMBATS
         let combatsAFaire = 0;
-        if (nbCombats < 8) {
-            console.log(`Moins de 8 combats dispos. On passe directement à l'audit du profil.`);
+        
+        if (nbCombats <= 1) {
+            console.log(`Seulement ${nbCombats} combat(s) disponible(s). On en garde toujours 1 en réserve. On passe à l'audit du profil.`);
         } else {
-            console.log(`Condition remplie. Lancement strict de 6 combats.`);
-            combatsAFaire = 6;
+            // On prend le nombre actuel moins 1, et on bloque à 8 maximum
+            combatsAFaire = Math.min(nbCombats - 1, 8);
+            console.log(`Calcul : ${nbCombats} dispos -> 1 en réserve = ${nbCombats - 1}. Plafond max : 8. Lancement de ${combatsAFaire} combat(s).`);
         }
         
-        // 4. BOUCLE DE COMBAT (Ne s'exécute que si combatsAFaire = 6)
+        // 4. BOUCLE DE COMBAT (Ne s'exécute que si combatsAFaire > 0)
         for (let i = 1; i <= combatsAFaire; i++) {
             console.log(`Combat ${i}/${combatsAFaire}...`);
 
+            // Attente Intelligente du bouton
             await page.waitForFunction(() => {
                 const boutons = Array.from(document.querySelectorAll('button'));
                 return boutons.some(b => 
@@ -111,6 +114,7 @@ async function lancerCycleDeCombats() {
                 );
             }, { timeout: 10000 }).catch(() => console.log("Attente du bouton expirée."));
 
+            // Anti-Ban : Pause humaine avant de cliquer
             await attendreAleatoire(800, 1500);
 
             await page.evaluate(() => {
@@ -122,11 +126,13 @@ async function lancerCycleDeCombats() {
                 if (cible) cible.click();
             });
             
+            // Anti-Ban : Pause le temps de l'animation
             await attendreAleatoire(2000, 2500);
             
             // Clic au centre pour passer l'animation "Découdre"
             await page.mouse.click(640, 360);
             
+            // Anti-Ban : Pause pendant la bagarre
             await attendreAleatoire(5500, 7000); 
 
             // Comptage des victoires et défaites
@@ -138,27 +144,32 @@ async function lancerCycleDeCombats() {
             }
         }
         
-        // 5. NAVIGATION VERS LE PROFIL (Cette étape se fera toujours)
+        // 5. NAVIGATION VERS LE PROFIL (Méthode Bulldozer Infaillible)
         console.log("Navigation vers l'historique des combats...");
         
-        // Clic sur l'onglet CLASSEMENT
         await page.evaluate(() => {
-            const elements = Array.from(document.querySelectorAll('div, span, button'));
-            const onglet = elements.find(el => el.textContent.trim().toUpperCase() === 'CLASSEMENT');
-            if (onglet) onglet.click();
+            const elements = Array.from(document.querySelectorAll('*'));
+            const onglet = elements.find(el => el.textContent.trim().toUpperCase() === 'CLASSEMENT' && el.children.length === 0);
+            if (onglet) {
+                onglet.click();
+                if (onglet.parentElement) onglet.parentElement.click();
+            }
         });
         await attendreAleatoire(2000, 3000);
 
-        // Clic sur votre profil
         await page.evaluate(() => {
-            const elements = Array.from(document.querySelectorAll('div, span'));
-            // Recherche souple pour être sûr de trouver 'akaimed'
-            const profil = elements.find(el => el.textContent.toLowerCase().includes('akaimed'));
-            if (profil) profil.click();
+            const elements = Array.from(document.querySelectorAll('*'));
+            const cibles = elements.filter(el => 
+                el.textContent.toLowerCase().includes('akaimed') && 
+                el.textContent.length < 50
+            );
+            
+            cibles.forEach(cible => {
+                cible.click();
+            });
         });
         await attendreAleatoire(2000, 3000);
 
-        // Extraction des données d'historique
         const historique = await page.evaluate(() => {
             const texteComplet = document.body.innerText;
             const index = texteComplet.indexOf('5 DERNIERS COMBATS');
@@ -171,10 +182,9 @@ async function lancerCycleDeCombats() {
         // 6. RAPPORT FINAL ET ENVOI
         const capture = await page.screenshot();
         
-        // On adapte le titre du message Discord selon s'il y a eu des combats ou non
         const titreMessage = combatsAFaire > 0 
-            ? `✅ **Cycle de 6 combats terminé !**` 
-            : `ℹ️ **Audit de routine (Énergie < 8)**`;
+            ? `✅ **Cycle de ${combatsAFaire} combat(s) terminé !**` 
+            : `ℹ️ **Audit de routine (1 ou 0 combat dispo)**`;
 
         const rapport = `${titreMessage}\n\n📊 **RÉSUMÉ DE LA SESSION :**\n🏆 Victoires : ${victoires}\n💀 Défaites : ${defaites}\n\n📝 **EXTRAIT DU PROFIL (5 derniers combats) :**\n\`\`\`text\n${historique}\n\`\`\``;
         
