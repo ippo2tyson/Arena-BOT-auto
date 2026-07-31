@@ -19,14 +19,11 @@ const COOKIES = [{
 // ==========================================
 // 🛠️ FONCTIONS UTILITAIRES & ANTI-BAN
 // ==========================================
-
-// 1. Anti-Ban : Pause aléatoire (ex: attendreAleatoire(2000, 3000) attend entre 2s et 3s)
 const attendreAleatoire = (min, max) => {
     const temps = Math.floor(Math.random() * (max - min + 1)) + min;
     return new Promise(resolve => setTimeout(resolve, temps));
 };
 
-// Envoi de texte simple sur Discord
 async function notifierDiscord(message) {
     if (!DISCORD_WEBHOOK_URL) return;
     try {
@@ -38,29 +35,33 @@ async function notifierDiscord(message) {
     } catch (err) { console.error("Erreur d'envoi Discord:", err); }
 }
 
-// 4. Envoi de texte + Capture d'écran sur Discord
 async function notifierDiscordAvecImage(message, imageBuffer) {
     if (!DISCORD_WEBHOOK_URL) return;
     try {
         const formData = new FormData();
         const blob = new Blob([imageBuffer], { type: 'image/png' });
-        formData.append('file', blob, 'capture.png');
+        formData.append('files[0]', blob, 'capture.png');
         formData.append('payload_json', JSON.stringify({ content: message }));
 
-        await fetch(DISCORD_WEBHOOK_URL, {
+        const response = await fetch(DISCORD_WEBHOOK_URL, {
             method: 'POST',
             body: formData
         });
-    } catch (err) { console.error("Erreur d'envoi d'image Discord:", err); }
+
+        if (!response.ok) {
+            await notifierDiscord(message + "\n\n*(L'image n'a pas pu être envoyée par Discord)*");
+        }
+    } catch (err) { 
+        console.error("Erreur d'envoi d'image Discord:", err);
+        await notifierDiscord(message + "\n\n*(Erreur critique lors de la génération de l'image)*");
+    }
 }
 
 // ==========================================
-// ⚔️ LOGIQUE DE COMBAT
+// ⚔️ LOGIQUE DE COMBAT ET REPORTING
 // ==========================================
 async function lancerCycleDeCombats() {
     console.log(`[${new Date().toLocaleTimeString()}] Lancement du cycle...`);
-    
-    // Variables pour le tableau de bord
     let victoires = 0;
     let defaites = 0;
 
@@ -75,22 +76,43 @@ async function lancerCycleDeCombats() {
         await page.setCookie(...COOKIES);
         await page.goto(URL_DU_JEU, { waitUntil: 'networkidle2' });
         
+        // 1. Laisser le temps à l'interface de charger
+        await attendreAleatoire(2000, 3000);
+
+        // 2. LECTURE DE L'ÉNERGIE DISPONIBLE
+        const combatsDispo = await page.evaluate(() => {
+            const text = document.body.innerText;
+            const match = text.match(/(\d+)\s*\/\s*10/);
+            if (match) return parseInt(match[1]);
+            return null;
+        });
+
+        const nbCombats = combatsDispo !== null ? combatsDispo : 0;
+        console.log(`Nombre de combats détectés : ${nbCombats}/10`);
+
+        // 3. VÉRIFICATION DE LA CONDITION STRICTE (Minimum 8)
+        if (nbCombats < 8) {
+            console.log(`Seulement ${nbCombats}/10 combats disponibles (minimum requis : 8). Le bot se rendort silencieusement.`);
+            await browser.close();
+            return; // Fin de l'exécution, Discord ne sera pas notifié
+        }
+        
+        // 4. LANCEMENT STRICT DE 6 COMBATS
+        console.log(`Condition remplie. Lancement strict de 6 combats.`);
+        
         for (let i = 1; i <= 6; i++) {
             console.log(`Combat ${i}/6...`);
 
-            // 2. Attente Intelligente : On attend maximum 10s que le bouton apparaisse
             await page.waitForFunction(() => {
                 const boutons = Array.from(document.querySelectorAll('button'));
                 return boutons.some(b => 
                     b.textContent.toLowerCase().includes('combattre') || 
                     b.textContent.toLowerCase().includes('rejouer')
                 );
-            }, { timeout: 10000 }).catch(() => console.log("Bouton de combat non trouvé, on tente quand même..."));
+            }, { timeout: 10000 }).catch(() => console.log("Attente du bouton expirée."));
 
-            // Pause humaine avant de cliquer
             await attendreAleatoire(800, 1500);
 
-            // Clic sur Combattre / Rejouer
             await page.evaluate(() => {
                 const boutons = Array.from(document.querySelectorAll('button'));
                 const cible = boutons.find(b => 
@@ -100,16 +122,14 @@ async function lancerCycleDeCombats() {
                 if (cible) cible.click();
             });
             
-            // Attente de l'écran de transition ("Découdre")
             await attendreAleatoire(2000, 2500);
             
-            // Clic au centre de l'écran
+            // Clic au centre pour passer l'animation "Découdre"
             await page.mouse.click(640, 360);
             
-            // Attente pendant que le combat se déroule (entre 5.5s et 7s)
             await attendreAleatoire(5500, 7000); 
 
-            // 3. Reporting : Le bot lit l'écran pour deviner le résultat
+            // Comptage des victoires et défaites pour le tableau de bord
             const texteEcran = await page.evaluate(() => document.body.innerText.toLowerCase());
             if (texteEcran.includes('victoire')) {
                 victoires++;
@@ -118,28 +138,51 @@ async function lancerCycleDeCombats() {
             }
         }
         
-        // 4. Capture d'écran de la situation finale
-        const capture = await page.screenshot();
+        // 5. NAVIGATION VERS LE PROFIL (Piste d'audit)
+        console.log("Navigation vers l'historique des combats...");
         
-        // Génération du rapport complet
-        const rapport = `✅ **Cycle terminé !**\n⚔️ Combats menés : 6\n🏆 Victoires : ${victoires}\n💀 Défaites : ${defaites}\n\n*(L'image ci-jointe montre l'état du jeu à la fin du cycle)*\n⏳ Prochain réveil dans 2 heures.`;
+        // Clic sur l'onglet CLASSEMENT
+        await page.evaluate(() => {
+            const elements = Array.from(document.querySelectorAll('div, span, button'));
+            const onglet = elements.find(el => el.textContent.trim() === 'CLASSEMENT');
+            if (onglet) onglet.click();
+        });
+        await attendreAleatoire(2000, 3000);
+
+        // Clic sur votre profil
+        await page.evaluate(() => {
+            const elements = Array.from(document.querySelectorAll('div, span'));
+            const profil = elements.find(el => el.textContent.includes('akaimed'));
+            if (profil) profil.click();
+        });
+        await attendreAleatoire(2000, 3000);
+
+        // Extraction des données d'historique
+        const historique = await page.evaluate(() => {
+            const texteComplet = document.body.innerText;
+            const index = texteComplet.indexOf('5 DERNIERS COMBATS');
+            if (index !== -1) {
+                return texteComplet.substring(index).trim();
+            }
+            return "Historique indisponible sur la page.";
+        });
+
+        // 6. RAPPORT FINAL ET ENVOI
+        const capture = await page.screenshot();
+        const rapport = `✅ **Cycle terminé !**\n\n📊 **RÉSUMÉ DES 6 COMBATS :**\n🏆 Victoires : ${victoires}\n💀 Défaites : ${defaites}\n\n📝 **EXTRAIT DU PROFIL (5 derniers combats) :**\n\`\`\`text\n${historique}\n\`\`\``;
         
         await notifierDiscordAvecImage(rapport, capture);
         
     } catch (error) {
         console.error("Erreur pendant le cycle:", error);
-        
-        // Système de secours : S'il y a un bug, on prend l'écran en photo pour comprendre pourquoi
         try {
             const pages = await browser.pages();
             if (pages.length > 0) {
                 const captureErreur = await pages[0].screenshot();
-                await notifierDiscordAvecImage(`⚠️ **Le bot a planté !**\nMessage d'erreur : \`${error.message}\`\nVoici à quoi ressemblait l'écran au moment du crash :`, captureErreur);
-            } else {
-                await notifierDiscord("⚠️ **Erreur critique :** Le bot a planté et n'a pas pu prendre de photo.");
+                await notifierDiscordAvecImage(`⚠️ **Le bot a planté !**\nMessage d'erreur : \`${error.message}\``, captureErreur);
             }
         } catch (e) {
-            await notifierDiscord("⚠️ **Erreur très critique.**");
+            await notifierDiscord("⚠️ **Erreur critique.** Le script a craché sans pouvoir prendre de photo.");
         }
     } finally {
         await browser.close();
