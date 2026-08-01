@@ -1,10 +1,7 @@
 name: Bot Auto Arena
 
 on:
-  schedule:
-    # S'exécute à la minute 3, toutes les 2 heures (00:03, 02:03, 04:03...)
-    - cron: '3 */2 * * *'
-  workflow_dispatch: # Permet de lancer un test manuellement
+  workflow_dispatch:
 
 jobs:
   run-bot:
