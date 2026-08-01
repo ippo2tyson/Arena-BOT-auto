@@ -1,7 +1,7 @@
 const puppeteer = require('puppeteer');
 
 // ==========================================
-// ⚙️ CONFIGURATION SÉCURISÉE
+// ⚙️ CONFIGURATION DE BASE
 // ==========================================
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 const OPA_SESSION_VALUE = process.env.OPA_SESSION; 
@@ -17,12 +17,10 @@ const COOKIES = [{
 }];
 
 // ==========================================
-// 🛠️ FONCTIONS UTILITAIRES & ANTI-BAN
+// 🛠️ FONCTIONS UTILITAIRES & DISCORD
 // ==========================================
-const attendreAleatoire = (min, max) => {
-    const temps = Math.floor(Math.random() * (max - min + 1)) + min;
-    return new Promise(resolve => setTimeout(resolve, temps));
-};
+const attendre = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const attendreAleatoire = (min, max) => attendre(Math.floor(Math.random() * (max - min + 1)) + min);
 
 async function notifierDiscord(message) {
     if (!DISCORD_WEBHOOK_URL) return;
@@ -32,7 +30,7 @@ async function notifierDiscord(message) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ content: message })
         });
-    } catch (err) { console.error("Erreur d'envoi Discord:", err); }
+    } catch (err) { console.error("Erreur Discord:", err); }
 }
 
 async function notifierDiscordAvecImage(message, imageBuffer) {
@@ -58,12 +56,10 @@ async function notifierDiscordAvecImage(message, imageBuffer) {
 }
 
 // ==========================================
-// ⚔️ LOGIQUE PRINCIPALE
+// ⚔️ MISSION : 6 COMBATS + CLASSEMENT
 // ==========================================
-async function lancerCycleDeCombats() {
-    console.log(`[${new Date().toLocaleTimeString()}] Lancement du cycle...`);
-    let victoires = 0;
-    let defaites = 0;
+async function lancerCycleExpress() {
+    console.log("Démarrage du bot (Mode F5 Rapide)...");
 
     const browser = await puppeteer.launch({ 
         headless: true, 
@@ -75,52 +71,25 @@ async function lancerCycleDeCombats() {
         await page.setViewport({ width: 1280, height: 720 });
         await page.setCookie(...COOKIES);
         
-        // 1. Premier chargement
+        // 1. Aller sur le jeu et attendre le chargement initial
         await page.goto(URL_DU_JEU, { waitUntil: 'networkidle2' });
-        await attendreAleatoire(2000, 3000);
+        await attendreAleatoire(3000, 4000);
 
-        // Rafraîchissement forcé (F5) pour actualiser l'énergie serveur
-        console.log("Rafraîchissement de la page pour synchroniser l'énergie...");
-        await page.reload({ waitUntil: 'networkidle2' });
-        await attendreAleatoire(3000, 4000); 
-
-        // 2. LECTURE DE L'ÉNERGIE DISPONIBLE
-        const combatsDispo = await page.evaluate(() => {
-            const text = document.body.innerText;
-            const match = text.match(/(\d+)\s*\/\s*10/);
-            if (match) return parseInt(match[1]);
-            return null;
+        // 2. Lire l'énergie affichée
+        const energieAffichee = await page.evaluate(() => {
+            const match = document.body.innerText.match(/(\d+)\s*\/\s*10/);
+            return match ? match[1] : "?";
         });
+        console.log(`Énergie lue au démarrage : ${energieAffichee}/10`);
 
-        const nbCombats = combatsDispo !== null ? combatsDispo : 0;
-        console.log(`Nombre de combats détectés après rafraîchissement : ${nbCombats}/10`);
+        // 3. Lancer les 6 combats avec la technique du rafraîchissement
+        for (let i = 1; i <= 6; i++) {
+            console.log(`Tentative de combat ${i}/6...`);
 
-        // 3. DÉCISION DU NOMBRE DE COMBATS (Garde 1 en réserve, Max 8)
-        let combatsAFaire = 0;
-        
-        if (nbCombats <= 1) {
-            console.log(`Seulement ${nbCombats} combat(s) disponible(s). On en garde 1 en réserve.`);
-        } else {
-            combatsAFaire = Math.min(nbCombats - 1, 8);
-            console.log(`Calcul : ${nbCombats} dispos -> 1 en réserve = ${nbCombats - 1}. Plafond max : 8. Lancement de ${combatsAFaire} combat(s).`);
-        }
-        
-        // 4. BOUCLE DE COMBAT (Ne s'exécute que si combatsAFaire > 0)
-        for (let i = 1; i <= combatsAFaire; i++) {
-            console.log(`Combat ${i}/${combatsAFaire}...`);
+            // Petite pause humaine avant de cliquer
+            await attendreAleatoire(1500, 2000);
 
-            // Attente Intelligente
-            await page.waitForFunction(() => {
-                const boutons = Array.from(document.querySelectorAll('button'));
-                return boutons.some(b => 
-                    b.textContent.toLowerCase().includes('combattre') || 
-                    b.textContent.toLowerCase().includes('rejouer')
-                );
-            }, { timeout: 10000 }).catch(() => console.log("Attente du bouton expirée."));
-
-            // Pause Anti-ban avant clic
-            await attendreAleatoire(800, 1500);
-
+            // Clic sur "Combattre" ou "Rejouer"
             await page.evaluate(() => {
                 const boutons = Array.from(document.querySelectorAll('button'));
                 const cible = boutons.find(b => 
@@ -130,31 +99,23 @@ async function lancerCycleDeCombats() {
                 if (cible) cible.click();
             });
             
-            // Pause pour laisser l'animation "Découdre" apparaître
-            await attendreAleatoire(2000, 2500);
+            // ⚠️ ATTENTE STRICTE DE 5 SECONDES QUE L'ARÈNE SE LANCE SUR LE SERVEUR
+            console.log("Attente de 5 secondes...");
+            await attendre(5000);
             
-            // Clic au centre 
-            await page.mouse.click(640, 360);
+            // 🔄 F5 POUR PASSER L'ANIMATION DE COMBAT
+            console.log("Rafraîchissement (F5) pour skip l'animation !");
+            await page.reload({ waitUntil: 'networkidle2' });
             
-            // ⚠️ TEMPS DE COMBAT AUGMENTÉ (12 à 15 secondes) POUR NE PAS COUPER L'ANIMATION
-            console.log("Attente de la fin du combat...");
-            await attendreAleatoire(12000, 15000); 
-
-            // Comptage des victoires et défaites
-            const texteEcran = await page.evaluate(() => document.body.innerText.toLowerCase());
-            if (texteEcran.includes('victoire')) {
-                victoires++;
-            } else if (texteEcran.includes('défaite') || texteEcran.includes('defaite')) {
-                defaites++;
-            }
+            // Laisse le temps à la page de se recharger correctement avant de recommencer
+            await attendreAleatoire(3000, 4000); 
         }
         
-        // 5. NAVIGATION VERS LE CLASSEMENT SEUL (Pour le screenshot)
+        // 4. Navigation vers le Classement
         console.log("Navigation vers le Classement pour la capture d'écran...");
-        
         await page.evaluate(() => {
-            const elements = Array.from(document.querySelectorAll('div, span, p'));
-            const onglet = elements.find(el => el.textContent.trim().toUpperCase() === 'CLASSEMENT');
+            const elements = Array.from(document.querySelectorAll('*'));
+            const onglet = elements.find(el => el.textContent.trim().toUpperCase() === 'CLASSEMENT' && el.children.length === 0);
             if (onglet) {
                 onglet.click();
                 if (onglet.parentElement) onglet.parentElement.click();
@@ -164,31 +125,19 @@ async function lancerCycleDeCombats() {
         // On attend pour que les avatars du classement s'affichent bien
         await attendreAleatoire(4000, 5000);
 
-        // 6. RAPPORT FINAL ET ENVOI
+        // 5. Capture d'écran et envoi du message Discord
         const capture = await page.screenshot();
+        const message = `✅ **Cycle terminé !**\nJ'ai exécuté ma routine de 6 combats (Skip F5).\n⚡ Énergie au lancement : **${energieAffichee}/10**\n\n*(La capture d'écran ci-jointe montre l'état du Classement)*`;
         
-        const titreMessage = combatsAFaire > 0 
-            ? `✅ **Cycle de ${combatsAFaire} combat(s) terminé !**` 
-            : `ℹ️ **Audit de routine (1 ou 0 combat dispo)**`;
-
-        const rapport = `${titreMessage}\n\n📊 **RÉSUMÉ DE LA SESSION :**\n🏆 Victoires : ${victoires}\n💀 Défaites : ${defaites}\n\n*(La capture d'écran ci-jointe montre l'état du Classement actuel)*`;
-        
-        await notifierDiscordAvecImage(rapport, capture);
+        await notifierDiscordAvecImage(message, capture);
+        console.log("Mission accomplie.");
         
     } catch (error) {
-        console.error("Erreur pendant le cycle:", error);
-        try {
-            const pages = await browser.pages();
-            if (pages.length > 0) {
-                const captureErreur = await pages[0].screenshot();
-                await notifierDiscordAvecImage(`⚠️ **Le bot a planté !**\nMessage d'erreur : \`${error.message}\``, captureErreur);
-            }
-        } catch (e) {
-            await notifierDiscord("⚠️ **Erreur critique.** Le script a craché sans pouvoir prendre de photo.");
-        }
+        console.error("Crash inattendu :", error);
+        await notifierDiscord(`⚠️ **Problème technique** : Le bot a crashé. Raison : ${error.message}`);
     } finally {
         await browser.close();
     }
 }
 
-lancerCycleDeCombats();
+lancerCycleExpress();
