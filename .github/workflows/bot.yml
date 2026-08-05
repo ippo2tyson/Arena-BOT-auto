@@ -7,19 +7,16 @@ jobs:
   run-bot:
     runs-on: ubuntu-latest
     steps:
-      - name: Récupérer le code
-        uses: actions/checkout@v4
-
-      - name: Installer Node.js
+      - uses: actions/checkout@v4
+      - name: Utiliser Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-
       - name: Installer les dépendances
-        run: npm install
-
+        run: npm install puppeteer
       - name: Lancer le script
-        run: node index.js
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           OPA_SESSION: ${{ secrets.OPA_SESSION }}
+          OPA_SESSION_2: ${{ secrets.OPA_SESSION_2 }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: node index.js
