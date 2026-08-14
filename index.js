@@ -104,9 +104,10 @@ async function lancerCycle(cookieValue, nomCompte, avecCapture) {
             await attendreAleatoire(3000, 4000); 
         }
         
-        // 4. Capture d'écran (Uniquement pour le compte configuré avec 'true')
+        // 4. Capture d'écran avec la NOUVELLE NAVIGATION
         if (avecCapture) {
-            console.log(`[${nomCompte}] Navigation vers le Classement...`);
+            console.log(`[${nomCompte}] Navigation vers le menu Classement...`);
+            // Étape A : Clic sur l'onglet principal CLASSEMENT en bas
             await page.evaluate(() => {
                 const elements = Array.from(document.querySelectorAll('*'));
                 const onglet = elements.find(el => el.textContent.trim().toUpperCase() === 'CLASSEMENT' && el.children.length === 0);
@@ -116,9 +117,22 @@ async function lancerCycle(cookieValue, nomCompte, avecCapture) {
                 }
             });
             
-            await attendreAleatoire(4000, 5000);
+            await attendreAleatoire(2000, 3000); // Laisse le menu s'ouvrir
+            
+            console.log(`[${nomCompte}] Ouverture de l'onglet Hall of Fame...`);
+            // Étape B : Clic sur le sous-menu HALL OF FAME en haut
+            await page.evaluate(() => {
+                const elements = Array.from(document.querySelectorAll('*'));
+                const btnHallOfFame = elements.find(el => el.textContent.toUpperCase().includes('HALL OF FAME') && el.children.length === 0);
+                if (btnHallOfFame) {
+                    btnHallOfFame.click();
+                    if (btnHallOfFame.parentElement) btnHallOfFame.parentElement.click();
+                }
+            });
+
+            await attendreAleatoire(4000, 5000); // Laisse les avatars charger
             const capture = await page.screenshot();
-            const message = `✅ **Cycle terminé pour le ${nomCompte} !**\n⚡ Énergie au lancement : **${energieAffichee}/10**\n\n*(Capture du Classement)*`;
+            const message = `✅ **Cycle terminé pour le ${nomCompte} !**\n⚡ Énergie au lancement : **${energieAffichee}/10**\n\n*(Capture du Hall of Fame)*`;
             await notifierDiscordAvecImage(message, capture);
         } else {
             console.log(`[${nomCompte}] Mode silencieux activé (pas de notification Discord).`);
