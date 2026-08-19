@@ -48,7 +48,7 @@ async function notifierDiscordAvecImage(message, imageBuffer) {
 }
 
 // ==========================================
-// ⚔️ MISSION : 6 COMBATS + CLASSEMENT
+// ⚔️ MISSION : COMBATS DYNAMIQUES & RÉSERVE
 // ==========================================
 async function lancerCycle(cookieValue, nomCompte, avecCapture) {
     console.log(`\n🚀 Démarrage du bot pour le ${nomCompte}...`);
@@ -75,16 +75,30 @@ async function lancerCycle(cookieValue, nomCompte, avecCapture) {
         await page.goto(URL_DU_JEU, { waitUntil: 'networkidle2' });
         await attendreAleatoire(3000, 4000);
 
-        // 2. Lecture de l'énergie
-        const energieAffichee = await page.evaluate(() => {
-            const match = document.body.innerText.match(/(\d+)\s*\/\s*10/);
-            return match ? match[1] : "?";
+        // 2. Lecture de la jauge sur 30
+        const energieLue = await page.evaluate(() => {
+            const match = document.body.innerText.match(/(\d+)\s*\/\s*30/);
+            return match ? parseInt(match[1]) : 0;
         });
-        console.log(`[${nomCompte}] Énergie lue au démarrage : ${energieAffichee}/10`);
+        console.log(`[${nomCompte}] Énergie lue au démarrage : ${energieLue}/30`);
 
-        // 3. Boucle de 6 combats avec rafraîchissement rapide
-        for (let i = 1; i <= 6; i++) {
-            console.log(`[${nomCompte}] Tentative de combat ${i}/6...`);
+        // 3. Calcul intelligent des combats (Garder 10 en réserve, max 20 exécutés)
+        const reserveManuelle = 10;
+        let combatsAFaire = energieLue - reserveManuelle;
+
+        if (combatsAFaire > 20) combatsAFaire = 20; // Plafond de sécurité
+
+        if (combatsAFaire <= 0) {
+            console.log(`[${nomCompte}] La jauge (${energieLue}/30) est réservée pour le mode manuel. Annulation des combats.`);
+            await browser.close();
+            return;
+        }
+
+        console.log(`[${nomCompte}] Lancement de ${combatsAFaire} combats pour écrémer la jauge...`);
+
+        // 4. Boucle de combats
+        for (let i = 1; i <= combatsAFaire; i++) {
+            console.log(`[${nomCompte}] Tentative de combat ${i}/${combatsAFaire}...`);
             await attendreAleatoire(1500, 2000);
 
             await page.evaluate(() => {
@@ -104,10 +118,9 @@ async function lancerCycle(cookieValue, nomCompte, avecCapture) {
             await attendreAleatoire(3000, 4000); 
         }
         
-        // 4. Capture d'écran avec la NOUVELLE NAVIGATION
+        // 5. Capture d'écran avec navigation Hall of Fame
         if (avecCapture) {
             console.log(`[${nomCompte}] Navigation vers le menu Classement...`);
-            // Étape A : Clic sur l'onglet principal CLASSEMENT en bas
             await page.evaluate(() => {
                 const elements = Array.from(document.querySelectorAll('*'));
                 const onglet = elements.find(el => el.textContent.trim().toUpperCase() === 'CLASSEMENT' && el.children.length === 0);
@@ -117,10 +130,9 @@ async function lancerCycle(cookieValue, nomCompte, avecCapture) {
                 }
             });
             
-            await attendreAleatoire(2000, 3000); // Laisse le menu s'ouvrir
+            await attendreAleatoire(2000, 3000);
             
             console.log(`[${nomCompte}] Ouverture de l'onglet Hall of Fame...`);
-            // Étape B : Clic sur le sous-menu HALL OF FAME en haut
             await page.evaluate(() => {
                 const elements = Array.from(document.querySelectorAll('*'));
                 const btnHallOfFame = elements.find(el => el.textContent.toUpperCase().includes('HALL OF FAME') && el.children.length === 0);
@@ -130,9 +142,11 @@ async function lancerCycle(cookieValue, nomCompte, avecCapture) {
                 }
             });
 
-            await attendreAleatoire(4000, 5000); // Laisse les avatars charger
+            await attendreAleatoire(4000, 5000);
             const capture = await page.screenshot();
-            const message = `✅ **Cycle terminé pour le ${nomCompte} !**\n⚡ Énergie au lancement : **${energieAffichee}/10**\n\n*(Capture du Hall of Fame)*`;
+            
+            const energieRestante = energieLue - combatsAFaire;
+            const message = `✅ **Cycle terminé pour le ${nomCompte} !**\n⚔️ **${combatsAFaire} combats** effectués.\n🔋 Énergie gardée en réserve : **${energieRestante}/30**\n\n*(Capture du Hall of Fame)*`;
             await notifierDiscordAvecImage(message, capture);
         } else {
             console.log(`[${nomCompte}] Mode silencieux activé (pas de notification Discord).`);
