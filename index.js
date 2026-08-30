@@ -1,4 +1,6 @@
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+puppeteer.use(StealthPlugin());
 
 // ==========================================
 // ⚙️ CONFIGURATION DE BASE
@@ -75,50 +77,63 @@ async function lancerCycle(cookieValue, nomCompte, avecCapture) {
         await page.goto(URL_DU_JEU, { waitUntil: 'networkidle2' });
         await attendreAleatoire(3000, 4000);
 
-        // 2. Lecture de la jauge sur 30
+        // 2. Lecture optimisée de la jauge sur 30 (Affinement du DOM)
         const energieLue = await page.evaluate(() => {
-            const match = document.body.innerText.match(/(\d+)\s*\/\s*30/);
+            // Optimisation : On cible uniquement les balises textes probables au lieu de tout le body
+            const elements = Array.from(document.querySelectorAll('div, span, p, h1, h2, h3'));
+            const conteneurEnergie = elements.find(el => el.textContent.includes('/30'));
+            const match = conteneurEnergie ? conteneurEnergie.textContent.match(/(\d+)\s*\/\s*30/) : null;
             return match ? parseInt(match[1]) : 0;
         });
         console.log(`[${nomCompte}] Énergie lue au démarrage : ${energieLue}/30`);
 
-        // 3. Calcul intelligent des combats (Garder 10 en réserve, max 20 exécutés)
+        // 3. Calcul intelligent des combats
         const reserveManuelle = 10;
         let combatsAFaire = energieLue - reserveManuelle;
+        if (combatsAFaire > 20) combatsAFaire = 20;
 
-        if (combatsAFaire > 20) combatsAFaire = 20; // Plafond de sécurité
-
-        if (combatsAFaire <= 0) {
-            console.log(`[${nomCompte}] La jauge (${energieLue}/30) est réservée pour le mode manuel. Annulation des combats.`);
-            await browser.close();
-            return;
-        }
-
-        console.log(`[${nomCompte}] Lancement de ${combatsAFaire} combats pour écrémer la jauge...`);
-
-        // 4. Boucle de combats
-        for (let i = 1; i <= combatsAFaire; i++) {
-            console.log(`[${nomCompte}] Tentative de combat ${i}/${combatsAFaire}...`);
-            await attendreAleatoire(1500, 2000);
-
-            await page.evaluate(() => {
-                const boutons = Array.from(document.querySelectorAll('button'));
-                const cible = boutons.find(b => 
-                    b.textContent.toLowerCase().includes('combattre') || 
-                    b.textContent.toLowerCase().includes('rejouer')
-                );
-                if (cible) cible.click();
-            });
+        // 4. Boucle de combats (Avec Try/Catch Soft-Fail)
+        if (combatsAFaire > 0) {
+            console.log(`[${nomCompte}] Lancement de ${combatsAFaire} combats pour écrémer la jauge...`);
             
-            console.log(`[${nomCompte}] Attente serveur de 5 secondes...`);
-            await attendre(5000);
-            
-            console.log(`[${nomCompte}] Rafraîchissement (F5)...`);
-            await page.reload({ waitUntil: 'networkidle2' });
-            await attendreAleatoire(3000, 4000); 
+            for (let i = 1; i <= combatsAFaire; i++) {
+                try {
+                    console.log(`[${nomCompte}] Tentative de combat ${i}/${combatsAFaire}...`);
+                    await attendreAleatoire(1500, 2000);
+
+                    const actionReussie = await page.evaluate(() => {
+                        // Ciblage strict : Correspondance exacte du texte pour éviter de cliquer sur des faux positifs
+                        const boutons = Array.from(document.querySelectorAll('button'));
+                        const cible = boutons.find(b => 
+                            b.textContent.trim().toLowerCase() === 'combattre' || 
+                            b.textContent.trim().toLowerCase() === 'rejouer'
+                        );
+                        if (cible) {
+                            cible.click();
+                            return true;
+                        }
+                        return false;
+                    });
+
+                    if (!actionReussie) throw new Error("Bouton 'Combattre' ou 'Rejouer' introuvable dans le DOM.");
+                    
+                    console.log(`[${nomCompte}] Attente serveur de 5 secondes...`);
+                    await attendre(5000);
+                    
+                    console.log(`[${nomCompte}] Rafraîchissement (F5)...`);
+                    await page.reload({ waitUntil: 'networkidle2' });
+                    await attendreAleatoire(3000, 4000); 
+
+                } catch (erreurBoucle) {
+                    console.log(`[${nomCompte}] ⚠️ Soft-fail activé au combat ${i} : ${erreurBoucle.message}. Passage au suivant.`);
+                    continue; // Empêche le crash total et passe à l'itération suivante
+                }
+            }
+        } else {
+            console.log(`[${nomCompte}] Mode dormant : La jauge (${energieLue}/30) est réservée pour le mode manuel.`);
         }
         
-        // 5. Capture d'écran avec navigation Hall of Fame
+        // 5. Capture d'écran permanente (Exécutée même si 0 combat)
         if (avecCapture) {
             console.log(`[${nomCompte}] Navigation vers le menu Classement...`);
             await page.evaluate(() => {
@@ -145,8 +160,15 @@ async function lancerCycle(cookieValue, nomCompte, avecCapture) {
             await attendreAleatoire(4000, 5000);
             const capture = await page.screenshot();
             
-            const energieRestante = energieLue - combatsAFaire;
-            const message = `✅ **Cycle terminé pour le ${nomCompte} !**\n⚔️ **${combatsAFaire} combats** effectués.\n🔋 Énergie gardée en réserve : **${energieRestante}/30**\n\n*(Capture du Hall of Fame)*`;
+            // Formatage du message selon le mode (Dormant ou Actif)
+            let message;
+            if (combatsAFaire > 0) {
+                const energieRestante = energieLue - combatsAFaire;
+                message = `✅ **Cycle terminé pour le ${nomCompte} !**\n⚔️ **${combatsAFaire} combats** tentés.\n🔋 Énergie gardée en réserve : **${energieRestante}/30**\n\n*(Capture du Hall of Fame)*`;
+            } else {
+                message = `💤 **Mode Dormant pour le ${nomCompte}.**\n🔋 La jauge est à **${energieLue}/30** (Réserve de 10 intacte).\nAucun combat lancé pour ce cycle.\n\n*(Capture du Hall of Fame)*`;
+            }
+            
             await notifierDiscordAvecImage(message, capture);
         } else {
             console.log(`[${nomCompte}] Mode silencieux activé (pas de notification Discord).`);
@@ -155,8 +177,8 @@ async function lancerCycle(cookieValue, nomCompte, avecCapture) {
         console.log(`✅ Mission terminée pour le ${nomCompte}.`);
         
     } catch (error) {
-        console.error(`Crash sur le ${nomCompte} :`, error);
-        await notifierDiscord(`⚠️ **Erreur sur le ${nomCompte}** : ${error.message}`);
+        console.error(`Crash critique sur le ${nomCompte} :`, error);
+        await notifierDiscord(`⚠️ **Erreur critique sur le ${nomCompte}** : ${error.message}`);
     } finally {
         await browser.close();
     }
@@ -168,7 +190,6 @@ async function lancerCycle(cookieValue, nomCompte, avecCapture) {
 async function executerTousLesComptes() {
     console.log("=== Initialisation du cycle ===");
 
-    // 🎲 DÉLAI ALÉATOIRE ANTI-DÉTECTION (Entre 0 et 420 secondes = 0 à 7 minutes)
     const secondesAleatoires = Math.floor(Math.random() * 421);
     const minutes = Math.floor(secondesAleatoires / 60);
     const secondes = secondesAleatoires % 60;
@@ -176,14 +197,12 @@ async function executerTousLesComptes() {
     console.log(`⏳ Temporisation aléatoire : pause de ${minutes} min ${secondes} s avant exécution...`);
     await attendre(secondesAleatoires * 1000);
 
-    // 1. Exécution Compte 1 (Avec capture d'écran sur Discord)
     if (OPA_SESSION_1) {
         await lancerCycle(OPA_SESSION_1, "Compte 1", true);
     } else {
         console.log("❌ Variable OPA_SESSION manquante.");
     }
 
-    // 2. Exécution Compte 2 (Mode silencieux)
     if (OPA_SESSION_2) {
         console.log("\n⏳ Pause de 5 secondes avant le Compte 2...");
         await attendre(5000);
