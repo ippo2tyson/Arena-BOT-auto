@@ -79,7 +79,6 @@ async function lancerCycle(cookieValue, nomCompte, avecCapture) {
 
         // 2. Lecture optimisée de la jauge sur 30 (Affinement du DOM)
         const energieLue = await page.evaluate(() => {
-            // Optimisation : On cible uniquement les balises textes probables au lieu de tout le body
             const elements = Array.from(document.querySelectorAll('div, span, p, h1, h2, h3'));
             const conteneurEnergie = elements.find(el => el.textContent.includes('/30'));
             const match = conteneurEnergie ? conteneurEnergie.textContent.match(/(\d+)\s*\/\s*30/) : null;
@@ -102,11 +101,11 @@ async function lancerCycle(cookieValue, nomCompte, avecCapture) {
                     await attendreAleatoire(1500, 2000);
 
                     const actionReussie = await page.evaluate(() => {
-                        // Ciblage strict : Correspondance exacte du texte pour éviter de cliquer sur des faux positifs
+                        // Correction : Ciblage souple avec .includes() pour éviter les bugs liés aux espaces/caractères invisibles
                         const boutons = Array.from(document.querySelectorAll('button'));
                         const cible = boutons.find(b => 
-                            b.textContent.trim().toLowerCase() === 'combattre' || 
-                            b.textContent.trim().toLowerCase() === 'rejouer'
+                            b.textContent.toLowerCase().includes('combattre') || 
+                            b.textContent.toLowerCase().includes('rejouer')
                         );
                         if (cible) {
                             cible.click();
@@ -126,14 +125,14 @@ async function lancerCycle(cookieValue, nomCompte, avecCapture) {
 
                 } catch (erreurBoucle) {
                     console.log(`[${nomCompte}] ⚠️ Soft-fail activé au combat ${i} : ${erreurBoucle.message}. Passage au suivant.`);
-                    continue; // Empêche le crash total et passe à l'itération suivante
+                    continue; 
                 }
             }
         } else {
             console.log(`[${nomCompte}] Mode dormant : La jauge (${energieLue}/30) est réservée pour le mode manuel.`);
         }
         
-        // 5. Capture d'écran permanente (Exécutée même si 0 combat)
+        // 5. Capture d'écran permanente
         if (avecCapture) {
             console.log(`[${nomCompte}] Navigation vers le menu Classement...`);
             await page.evaluate(() => {
@@ -160,7 +159,6 @@ async function lancerCycle(cookieValue, nomCompte, avecCapture) {
             await attendreAleatoire(4000, 5000);
             const capture = await page.screenshot();
             
-            // Formatage du message selon le mode (Dormant ou Actif)
             let message;
             if (combatsAFaire > 0) {
                 const energieRestante = energieLue - combatsAFaire;
