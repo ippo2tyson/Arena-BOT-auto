@@ -59,14 +59,8 @@ async function notifierDiscordAvecImage(message, imageBuffer) {
 }
 
 // ==========================================
-// 📅 FENÊTRES D'ACTIVITÉ VARIABLES (OPTIMISÉ ZÉRO PERTE)
+// 📅 FENÊTRES D'ACTIVITÉ (SAUTS CHAOTIQUES & ZÉRO PERTE)
 // ==========================================
-const NB_SESSIONS_MIN = 4;    
-const NB_SESSIONS_MAX = 6;
-const HEURE_MIN = 8;          // Ancre du matin
-const HEURE_MAX = 23;         // Ancre du soir
-const ECART_MIN_HEURES = 3;   
-
 function hashChaine(str) {
     let h = 0;
     for (let i = 0; i < str.length; i++) {
@@ -96,17 +90,26 @@ function genererFenetresDuJour(nomCompte) {
     const graine = hashChaine(`${dateDuJourParis()}-${nomCompte}`);
     const rng = mulberry32(graine);
 
-    const nbSessions = NB_SESSIONS_MIN + Math.floor(rng() * (NB_SESSIONS_MAX - NB_SESSIONS_MIN + 1));
-    const heures = [HEURE_MIN, HEURE_MAX]; 
-    let tentativesRestantes = 200; 
+    let heures = [8]; // Le bouchon du matin (obligatoire)
+    let heureCourante = 8;
 
-    while (heures.length < nbSessions && tentativesRestantes-- > 0) {
-        const candidate = HEURE_MIN + 1 + Math.floor(rng() * (HEURE_MAX - HEURE_MIN - 1));
-        if (heures.every(h => Math.abs(h - candidate) >= ECART_MIN_HEURES)) {
-            heures.push(candidate);
+    // Sauts aléatoires jusqu'à la fin de journée
+    while (heureCourante < 23) {
+        // Tirage d'un délai aléatoire entre 2 et 8 heures d'attente
+        let saut = 2 + Math.floor(rng() * 7); 
+        heureCourante += saut;
+
+        if (heureCourante < 23) {
+            heures.push(heureCourante);
         }
     }
-    return heures.sort((a, b) => a - b);
+
+    // Le bouchon du soir (obligatoire) pour survivre aux 9h de la nuit
+    if (!heures.includes(23)) {
+        heures.push(23);
+    }
+
+    return heures;
 }
 
 function jourSemaineParis() {
