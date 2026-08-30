@@ -15,9 +15,6 @@ const URL_DU_JEU = 'https://grand-line-arena.vercel.app/';
 // ==========================================
 const attendre = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Distribution gaussienne (Box-Muller) plutôt qu'uniforme -> ressemble davantage
-// à un temps de réaction humain (valeurs groupées autour d'une moyenne, avec
-// quelques outliers, au lieu d'une répartition plate facilement détectable).
 function delaiHumain(moyenneMs, ecartTypeMs, minMs = 300) {
     let u = 0, v = 0;
     while (u === 0) u = Math.random();
@@ -27,10 +24,9 @@ function delaiHumain(moyenneMs, ecartTypeMs, minMs = 300) {
     return attendre(Math.max(minMs, valeur));
 }
 
-// De temps en temps, un humain s'interrompt (regarde son téléphone, etc.)
 async function pauseDistractionAleatoire(probabilite = 0.12) {
     if (Math.random() < probabilite) {
-        const pauseMs = 8000 + Math.random() * 25000; // 8 à 33 secondes
+        const pauseMs = 8000 + Math.random() * 25000;
         console.log(`   💭 Micro-pause de distraction (${Math.round(pauseMs / 1000)}s)...`);
         await attendre(pauseMs);
     }
@@ -63,21 +59,13 @@ async function notifierDiscordAvecImage(message, imageBuffer) {
 }
 
 // ==========================================
-// 📅 FENÊTRES D'ACTIVITÉ VARIABLES PAR JOUR
+// 📅 FENÊTRES D'ACTIVITÉ VARIABLES (OPTIMISÉ ZÉRO PERTE)
 // ==========================================
-// Le workflow GitHub Actions déclenche désormais ce script toutes les
-// heures (cron "6 * * * *"). Plutôt que de jouer à chaque déclenchement
-// (signature très reconnaissable), le script décide lui-même si l'heure
-// actuelle fait partie des quelques créneaux "actifs" du jour. Le tirage
-// est déterministe pour une (date + compte) donnée -- donc stable entre
-// deux déclenchements dans la même journée -- mais change chaque jour,
-// sans avoir besoin de stocker d'état entre les runs (chaque run GitHub
-// Actions est une VM neuve).
-const NB_SESSIONS_MIN = 3;
+const NB_SESSIONS_MIN = 4;    
 const NB_SESSIONS_MAX = 6;
-const HEURE_MIN = 7;          // pas de session avant 7h (Europe/Paris)
-const HEURE_MAX = 23;         // ni après 23h
-const ECART_MIN_HEURES = 2;   // au moins 2h entre deux sessions le même jour
+const HEURE_MIN = 8;          // Ancre du matin
+const HEURE_MAX = 23;         // Ancre du soir
+const ECART_MIN_HEURES = 3;   
 
 function hashChaine(str) {
     let h = 0;
@@ -87,7 +75,6 @@ function hashChaine(str) {
     return h >>> 0;
 }
 
-// PRNG déterministe (mulberry32) : même seed = même séquence de nombres.
 function mulberry32(seed) {
     return function () {
         seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
@@ -98,7 +85,7 @@ function mulberry32(seed) {
 }
 
 function dateDuJourParis() {
-    return new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date()); // YYYY-MM-DD
+    return new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date()); 
 }
 
 function heureActuelleParis() {
@@ -110,11 +97,11 @@ function genererFenetresDuJour(nomCompte) {
     const rng = mulberry32(graine);
 
     const nbSessions = NB_SESSIONS_MIN + Math.floor(rng() * (NB_SESSIONS_MAX - NB_SESSIONS_MIN + 1));
-    const heures = [];
-    let tentativesRestantes = 200; // sécurité anti-boucle infinie si contraintes trop serrées
+    const heures = [HEURE_MIN, HEURE_MAX]; 
+    let tentativesRestantes = 200; 
 
     while (heures.length < nbSessions && tentativesRestantes-- > 0) {
-        const candidate = HEURE_MIN + Math.floor(rng() * (HEURE_MAX - HEURE_MIN + 1));
+        const candidate = HEURE_MIN + 1 + Math.floor(rng() * (HEURE_MAX - HEURE_MIN - 1));
         if (heures.every(h => Math.abs(h - candidate) >= ECART_MIN_HEURES)) {
             heures.push(candidate);
         }
@@ -122,21 +109,12 @@ function genererFenetresDuJour(nomCompte) {
     return heures.sort((a, b) => a - b);
 }
 
-// jour Paris : 0 = dimanche ... 6 = samedi
 function jourSemaineParis() {
     const abrege = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Paris', weekday: 'short' }).format(new Date());
     return { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[abrege];
 }
 
-// La saison se termine dimanche 23h59. De 10 (réserve habituelle) à 30
-// (plafond), la régénération prend (30-10)*20 = 400 min = 6h40. On arrête
-// donc de jouer après 16h le dimanche pour être garanti à 30/30 au reset,
-// avec une bonne marge de sécurité (~7h de battement).
-const HOARD_DIMANCHE_DES_HEURE = 16;
-
-// Le lundi à minuit (juste après le reset de saison), fenêtre de burst
-// prioritaire : peu importe le planning aléatoire du jour, on vide toute
-// la jauge d'un coup pour démarrer la nouvelle saison à fond.
+const HOARD_DIMANCHE_DES_HEURE = 14;
 const HEURE_BURST_RESET = 0;
 
 function sessionActivePourCetteHeure(nomCompte) {
@@ -144,13 +122,19 @@ function sessionActivePourCetteHeure(nomCompte) {
     const heureActuelle = heureActuelleParis();
 
     if (jour === 1 && heureActuelle === HEURE_BURST_RESET) {
-        console.log(`[${nomCompte}] 🔥 Fenêtre de burst post-reset (lundi ${HEURE_BURST_RESET}h) — priorité absolue.`);
+        console.log(`[${nomCompte}] 🔥 Fenêtre de burst post-reset (lundi ${HEURE_BURST_RESET}h).`);
         return true;
     }
 
-    if (jour === 0 && heureActuelle >= HOARD_DIMANCHE_DES_HEURE) {
-        console.log(`[${nomCompte}] 🌙 Mode accumulation dominical (${heureActuelle}h ≥ ${HOARD_DIMANCHE_DES_HEURE}h) — énergie mise de côté pour le reset.`);
-        return false;
+    if (jour === 0) {
+        if (heureActuelle === HOARD_DIMANCHE_DES_HEURE) {
+            console.log(`[${nomCompte}] 🧹 Vidage dominical absolu (14h) — Départ du compte à rebours de 10h.`);
+            return true;
+        }
+        if (heureActuelle > HOARD_DIMANCHE_DES_HEURE) {
+            console.log(`[${nomCompte}] 🌙 Mode accumulation dominical (${heureActuelle}h > ${HOARD_DIMANCHE_DES_HEURE}h).`);
+            return false;
+        }
     }
 
     const fenetres = genererFenetresDuJour(nomCompte);
@@ -163,21 +147,16 @@ function modeBurstActif() {
 }
 
 // ==========================================
-// 🖱️ CLIC "HUMAIN" — trajectoire de souris + clic réel
+// 🖱️ CLIC "HUMAIN" & NAVIGATION
 // ==========================================
-// Contrairement à element.click() déclenché en JS (aucun événement souris
-// généré), on déplace réellement le curseur en plusieurs étapes puis on
-// clique dans une zone aléatoire du bouton (pas toujours le centre exact).
 async function clicHumain(page, boundingBox) {
     const x = boundingBox.x + boundingBox.width * (0.3 + Math.random() * 0.4);
     const y = boundingBox.y + boundingBox.height * (0.3 + Math.random() * 0.4);
 
-    // Position de départ aléatoire ailleurs sur la page
     const startX = Math.random() * 1280;
     const startY = Math.random() * 720;
     await page.mouse.move(startX, startY);
 
-    // Trajectoire en plusieurs points intermédiaires (pas une ligne droite parfaite)
     const etapes = 6 + Math.floor(Math.random() * 4);
     for (let i = 1; i <= etapes; i++) {
         const progress = i / etapes;
@@ -191,9 +170,9 @@ async function clicHumain(page, boundingBox) {
     }
 
     await page.mouse.move(x, y);
-    await attendre(80 + Math.random() * 150); // temps avant d'appuyer, comme un humain qui vise
+    await attendre(80 + Math.random() * 150); 
     await page.mouse.down();
-    await attendre(40 + Math.random() * 80); // durée de pression du clic
+    await attendre(40 + Math.random() * 80); 
     await page.mouse.up();
 }
 
@@ -211,7 +190,6 @@ async function trouverEtCliquerBouton(page, textesCibles) {
     return true;
 }
 
-// Retry avec backoff exponentiel pour les actions réseau fragiles (goto/reload)
 async function avecRetry(fn, tentatives = 3, delaiBaseMs = 2000) {
     let derniereErreur;
     for (let i = 0; i < tentatives; i++) {
@@ -228,17 +206,16 @@ async function avecRetry(fn, tentatives = 3, delaiBaseMs = 2000) {
 }
 
 // ==========================================
-// ⚔️ MISSION : COMBATS DYNAMIQUES & RÉSERVE
+// ⚔️ MISSION : COMBATS DYNAMIQUES
 // ==========================================
 async function lancerCycle(cookieValue, nomCompte, avecCapture, modeBurst = false) {
     console.log(`\n🚀 Démarrage du bot pour le ${nomCompte}...${modeBurst ? ' [MODE BURST]' : ''}`);
 
-    // Viewport légèrement variable d'une session à l'autre (empreinte moins fixe)
     const largeur = 1270 + Math.floor(Math.random() * 40);
     const hauteur = 700 + Math.floor(Math.random() * 40);
 
     const browser = await puppeteer.launch({
-        headless: 'new', // le mode headless "new" est moins facilement fingerprinté que l'ancien true/false
+        headless: 'new', 
         args: ['--no-sandbox', '--disable-setuid-sandbox', `--window-size=${largeur},${hauteur}`]
     });
 
@@ -266,9 +243,6 @@ async function lancerCycle(cookieValue, nomCompte, avecCapture, modeBurst = fals
         });
         console.log(`[${nomCompte}] Énergie lue au démarrage : ${energieLue}/30`);
 
-        // Plus de réserve manuelle : personne ne joue à la main, donc aucune
-        // raison de laisser de l'énergie de côté. On draine jusqu'au vrai
-        // plafond du jeu (30) à chaque session, burst ou non.
         const ENERGIE_MAX = 30;
         let combatsAFaire = Math.min(energieLue, ENERGIE_MAX);
 
@@ -295,7 +269,7 @@ async function lancerCycle(cookieValue, nomCompte, avecCapture, modeBurst = fals
                 }
             }
         } else {
-            console.log(`[${nomCompte}] Mode dormant : jauge (${energieLue}/30) réservée.`);
+            console.log(`[${nomCompte}] Mode dormant : jauge à zéro.`);
         }
 
         if (avecCapture) {
@@ -314,9 +288,8 @@ async function lancerCycle(cookieValue, nomCompte, avecCapture, modeBurst = fals
             await delaiHumain(4500, 500);
 
             const capture = await page.screenshot();
-            const energieRestante = energieLue - combatsAFaire;
             const message = combatsAFaire > 0
-                ? `✅ **Cycle terminé pour le ${nomCompte} !**\n⚔️ **${combatsAFaire} combats** tentés.\n🔋 Réserve : **${energieRestante}/30**`
+                ? `✅ **Cycle terminé pour le ${nomCompte} !**\n⚔️ **${combatsAFaire} combats** tentés.\n🔋 Jauge vidée à **0/30**`
                 : `💤 **Mode Dormant pour le ${nomCompte}.**\n🔋 Jauge à **${energieLue}/30**.`;
             await notifierDiscordAvecImage(message, capture);
         }
@@ -347,8 +320,6 @@ async function executerTousLesComptes() {
         return;
     }
 
-    // Jitter à l'intérieur de l'heure : le cron déclenche toujours à la
-    // minute 6, mais le jeu réel commence à un moment variable dans l'heure.
     const secondesAleatoires = Math.floor(Math.random() * 421);
     console.log(`⏳ Pause avant démarrage de ${Math.floor(secondesAleatoires / 60)}min ${secondesAleatoires % 60}s...`);
     await attendre(secondesAleatoires * 1000);
