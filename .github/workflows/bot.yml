@@ -1,6 +1,8 @@
 name: Bot Auto Arena
 
 on:
+  schedule:
+    - cron: '6 * * * *'   # toutes les heures à la minute 6
   workflow_dispatch:
 
 jobs:
