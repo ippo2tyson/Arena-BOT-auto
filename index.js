@@ -86,67 +86,54 @@ function heureActuelleParis() {
     return parseInt(new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: 'numeric', hour12: false }).format(new Date()));
 }
 
-function genererFenetresDuJour(nomCompte) {
-    const graine = hashChaine(`${dateDuJourParis()}-${nomCompte}`);
-    const rng = mulberry32(graine);
-
-    let heures = [8]; // Le bouchon du matin (obligatoire)
-    let heureCourante = 8;
-
-    // Sauts aléatoires jusqu'à la fin de journée
-    while (heureCourante < 23) {
-        // Tirage d'un délai aléatoire entre 2 et 8 heures d'attente
-        let saut = 2 + Math.floor(rng() * 7); 
-        heureCourante += saut;
-
-        if (heureCourante < 23) {
-            heures.push(heureCourante);
-        }
-    }
-
-    // Le bouchon du soir (obligatoire) pour survivre aux 9h de la nuit
-    if (!heures.includes(23)) {
-        heures.push(23);
-    }
-
-    return heures;
-}
-
 function jourSemaineParis() {
     const abrege = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Paris', weekday: 'short' }).format(new Date());
     return { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[abrege];
 }
 
-const HOARD_DIMANCHE_DES_HEURE = 14;
-const HEURE_BURST_RESET = 0;
+function genererFenetresDuJour(nomCompte) {
+    const graine = hashChaine(`${dateDuJourParis()}-${nomCompte}`);
+    const rng = mulberry32(graine);
+    const jour = jourSemaineParis(); // 0 = Dimanche
+
+    let heures = [8]; // Premier vidage du matin garanti
+    let heureCourante = 8;
+
+    // Dimanche = 23h strict (sprint final avant 23h59)
+    // Semaine = Aléatoire entre 23h, 0h ou 1h
+    const optionsBouchon = [23, 0, 1];
+    const bouchonSoir = (jour === 0) ? 23 : optionsBouchon[Math.floor(rng() * optionsBouchon.length)];
+
+    const limiteJournee = (bouchonSoir === 0 || bouchonSoir === 1) ? 23 : bouchonSoir;
+
+    // Sauts aléatoires en journée
+    while (heureCourante < limiteJournee) {
+        let saut = 2 + Math.floor(rng() * 7); // Saut de 2h à 8h
+        heureCourante += saut;
+
+        if (heureCourante < limiteJournee) {
+            heures.push(heureCourante);
+        }
+    }
+
+    // Ajout du bouchon final
+    if (!heures.includes(bouchonSoir)) {
+        heures.push(bouchonSoir);
+    }
+
+    return heures.sort((a, b) => a - b);
+}
 
 function sessionActivePourCetteHeure(nomCompte) {
-    const jour = jourSemaineParis();
     const heureActuelle = heureActuelleParis();
-
-    if (jour === 1 && heureActuelle === HEURE_BURST_RESET) {
-        console.log(`[${nomCompte}] 🔥 Fenêtre de burst post-reset (lundi ${HEURE_BURST_RESET}h).`);
-        return true;
-    }
-
-    if (jour === 0) {
-        if (heureActuelle === HOARD_DIMANCHE_DES_HEURE) {
-            console.log(`[${nomCompte}] 🧹 Vidage dominical absolu (14h) — Départ du compte à rebours de 10h.`);
-            return true;
-        }
-        if (heureActuelle > HOARD_DIMANCHE_DES_HEURE) {
-            console.log(`[${nomCompte}] 🌙 Mode accumulation dominical (${heureActuelle}h > ${HOARD_DIMANCHE_DES_HEURE}h).`);
-            return false;
-        }
-    }
-
     const fenetres = genererFenetresDuJour(nomCompte);
+    
     console.log(`[${nomCompte}] Planning du jour (Europe/Paris) : ${fenetres.join('h, ')}h — heure actuelle : ${heureActuelle}h`);
     return fenetres.includes(heureActuelle);
 }
 
 function modeBurstActif() {
-    return jourSemaineParis() === 1 && heureActuelleParis() === HEURE_BURST_RESET;
+    return false;
 }
 
 // ==========================================
