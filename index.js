@@ -184,10 +184,17 @@ async function clicHumain(page, boundingBox) {
     await page.mouse.up();
 }
 
+function normaliserTexte(str) {
+    // Retire emojis/icônes/ponctuation, garde lettres/chiffres, espaces réduits.
+    // Corrige le bug où "⚔️ Combattre" ne matchait jamais "combattre" en égalité stricte.
+    return str.replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
 async function trouverEtCliquerBouton(page, textesCibles) {
     const boite = await page.evaluate((textes) => {
+        const normaliser = (str) => str.replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim().toLowerCase();
         const boutons = Array.from(document.querySelectorAll('button'));
-        const cible = boutons.find(b => textes.includes(b.textContent.trim().toLowerCase()));
+        const cible = boutons.find(b => textes.includes(normaliser(b.textContent)));
         if (!cible) return null;
         const r = cible.getBoundingClientRect();
         return { x: r.x, y: r.y, width: r.width, height: r.height };
