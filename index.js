@@ -79,7 +79,7 @@ function mulberry32(seed) {
 }
 
 function dateDuJourParis() {
-    return new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date()); 
+    return new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date());
 }
 
 function heureActuelleParis() {
@@ -91,43 +91,61 @@ function jourSemaineParis() {
     return { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[abrege];
 }
 
-function genererFenetresDuJour(nomCompte) {
-    const graine = hashChaine(`${dateDuJourParis()}-${nomCompte}`);
+// bouchonSoir : 23 (même jour, sûr) ou 0/1 (nuit suivante -> vérifié via seed de la veille)
+function calculerBouchonSoir(dateStr, nomCompte, jour) {
+    const graine = hashChaine(`${dateStr}-${nomCompte}`);
     const rng = mulberry32(graine);
-    const jour = jourSemaineParis(); // 0 = Dimanche
+    let heureCourante = 8;
+    while (heureCourante < 23) {
+        heureCourante += 2 + Math.floor(rng() * 7);
+    }
+    const optionsBouchon = [23, 0, 1];
+    return (jour === 0) ? 23 : optionsBouchon[Math.floor(rng() * optionsBouchon.length)];
+}
+
+function dateVeilleParis() {
+    const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Paris' }));
+    d.setDate(d.getDate() - 1);
+    return new Intl.DateTimeFormat('fr-CA').format(d);
+}
+
+function genererFenetresDuJour(nomCompte) {
+    const dateJour = dateDuJourParis();
+    const jour = jourSemaineParis();
+    const graine = hashChaine(`${dateJour}-${nomCompte}`);
+    const rng = mulberry32(graine);
 
     let heures = [8]; // Premier vidage du matin garanti
     let heureCourante = 8;
 
-    // Dimanche = 23h strict (sprint final avant 23h59)
-    // Semaine = Aléatoire entre 23h, 0h ou 1h
-    const optionsBouchon = [23, 0, 1];
-    const bouchonSoir = (jour === 0) ? 23 : optionsBouchon[Math.floor(rng() * optionsBouchon.length)];
-
-    const limiteJournee = (bouchonSoir === 0 || bouchonSoir === 1) ? 23 : bouchonSoir;
-
-    // Sauts aléatoires en journée
-    while (heureCourante < limiteJournee) {
+    while (heureCourante < 23) {
         let saut = 2 + Math.floor(rng() * 7); // Saut de 2h à 8h
         heureCourante += saut;
-
-        if (heureCourante < limiteJournee) {
-            heures.push(heureCourante);
-        }
+        if (heureCourante < 23) heures.push(heureCourante);
     }
 
-    // Ajout du bouchon final
-    if (!heures.includes(bouchonSoir)) {
-        heures.push(bouchonSoir);
-    }
+    const bouchonSoir = calculerBouchonSoir(dateJour, nomCompte, jour);
+    if (bouchonSoir === 23 && !heures.includes(23)) heures.push(23);
 
     return heures.sort((a, b) => a - b);
 }
 
 function sessionActivePourCetteHeure(nomCompte) {
     const heureActuelle = heureActuelleParis();
+    const jour = jourSemaineParis();
+
+    // 0h/1h : on vérifie si la VEILLE avait choisi ce bouchon comme clôture tardive
+    if (heureActuelle === 0 || heureActuelle === 1) {
+        const dateVeille = dateVeilleParis();
+        const jourVeille = (jour + 6) % 7;
+        const bouchonVeille = calculerBouchonSoir(dateVeille, nomCompte, jourVeille);
+        if (bouchonVeille === heureActuelle) {
+            console.log(`[${nomCompte}] 🌙 Bouchon tardif d'hier (${dateVeille}) déclenché à ${heureActuelle}h.`);
+            return true;
+        }
+    }
+
     const fenetres = genererFenetresDuJour(nomCompte);
-    
     console.log(`[${nomCompte}] Planning du jour (Europe/Paris) : ${fenetres.join('h, ')}h — heure actuelle : ${heureActuelle}h`);
     return fenetres.includes(heureActuelle);
 }
@@ -160,9 +178,9 @@ async function clicHumain(page, boundingBox) {
     }
 
     await page.mouse.move(x, y);
-    await attendre(80 + Math.random() * 150); 
+    await attendre(80 + Math.random() * 150);
     await page.mouse.down();
-    await attendre(40 + Math.random() * 80); 
+    await attendre(40 + Math.random() * 80);
     await page.mouse.up();
 }
 
@@ -205,7 +223,7 @@ async function lancerCycle(cookieValue, nomCompte, avecCapture, modeBurst = fals
     const hauteur = 700 + Math.floor(Math.random() * 40);
 
     const browser = await puppeteer.launch({
-        headless: 'new', 
+        headless: 'new',
         args: ['--no-sandbox', '--disable-setuid-sandbox', `--window-size=${largeur},${hauteur}`]
     });
 
