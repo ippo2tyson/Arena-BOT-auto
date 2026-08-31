@@ -253,6 +253,7 @@ async function lancerCycle(cookieValue, nomCompte, avecCapture, modeBurst = fals
 
         const ENERGIE_MAX = 30;
         let combatsAFaire = Math.min(energieLue, ENERGIE_MAX);
+        let combatsReussis = 0;
 
         if (combatsAFaire > 0) {
             console.log(`[${nomCompte}] Lancement de ${combatsAFaire} combats...`);
@@ -271,6 +272,8 @@ async function lancerCycle(cookieValue, nomCompte, avecCapture, modeBurst = fals
                     await avecRetry(() => page.reload({ waitUntil: 'networkidle2', timeout: 30000 }));
                     await delaiHumain(3500, 700);
 
+                    combatsReussis++;
+
                 } catch (erreurBoucle) {
                     console.log(`[${nomCompte}] ⚠️ Soft-fail combat ${i} : ${erreurBoucle.message}. Suivant.`);
                     continue;
@@ -278,6 +281,20 @@ async function lancerCycle(cookieValue, nomCompte, avecCapture, modeBurst = fals
             }
         } else {
             console.log(`[${nomCompte}] Mode dormant : jauge à zéro.`);
+        }
+
+        // Vérification réelle : on relit l'énergie après coup au lieu de faire confiance
+        // au nombre de tentatives. Si ça ne correspond pas, on l'affiche clairement.
+        const energieApres = combatsAFaire > 0 ? await page.evaluate(() => {
+            const elements = Array.from(document.querySelectorAll('div, span, p, h1, h2, h3'));
+            const conteneur = elements.find(el => el.textContent.includes('/30'));
+            const match = conteneur ? conteneur.textContent.match(/(\d+)\s*\/\s*30/) : null;
+            return match ? parseInt(match[1]) : null;
+        }) : energieLue;
+
+        const echec = combatsReussis < combatsAFaire;
+        if (echec) {
+            console.log(`[${nomCompte}] 🔴 ALERTE : ${combatsReussis}/${combatsAFaire} combats réellement réussis (énergie après : ${energieApres ?? 'inconnue'}/30). Le bouton n'a probablement pas été cliqué correctement (cookie expiré ? page inattendue ?).`);
         }
 
         if (avecCapture) {
@@ -296,9 +313,14 @@ async function lancerCycle(cookieValue, nomCompte, avecCapture, modeBurst = fals
             await delaiHumain(4500, 500);
 
             const capture = await page.screenshot();
-            const message = combatsAFaire > 0
-                ? `✅ **Cycle terminé pour le ${nomCompte} !**\n⚔️ **${combatsAFaire} combats** tentés.\n🔋 Jauge vidée à **0/30**`
-                : `💤 **Mode Dormant pour le ${nomCompte}.**\n🔋 Jauge à **${energieLue}/30**.`;
+            let message;
+            if (combatsAFaire === 0) {
+                message = `💤 **Mode Dormant pour le ${nomCompte}.**\n🔋 Jauge à **${energieLue}/30**.`;
+            } else if (echec) {
+                message = `🔴 **PROBLÈME sur le ${nomCompte} !**\n⚔️ **${combatsReussis}/${combatsAFaire}** combats réellement réussis.\n🔋 Énergie avant/après : **${energieLue}/30 → ${energieApres ?? '?'}/30**\n⚠️ Vérifie les logs du run (recherche "Soft-fail") — cookie de session probablement expiré.`;
+            } else {
+                message = `✅ **Cycle terminé pour le ${nomCompte} !**\n⚔️ **${combatsReussis} combats** réussis.\n🔋 Jauge vidée à **${energieApres}/30**`;
+            }
             await notifierDiscordAvecImage(message, capture);
         }
 
