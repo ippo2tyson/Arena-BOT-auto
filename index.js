@@ -133,6 +133,7 @@ function genererFenetresDuJour(nomCompte) {
 function sessionActivePourCetteHeure(nomCompte) {
     const heureActuelle = heureActuelleParis();
     const jour = jourSemaineParis();
+    const dateJour = dateDuJourParis();
 
     // 0h/1h : on vérifie si la VEILLE avait choisi ce bouchon comme clôture tardive
     if (heureActuelle === 0 || heureActuelle === 1) {
@@ -146,7 +147,11 @@ function sessionActivePourCetteHeure(nomCompte) {
     }
 
     const fenetres = genererFenetresDuJour(nomCompte);
-    console.log(`[${nomCompte}] Planning du jour (Europe/Paris) : ${fenetres.join('h, ')}h — heure actuelle : ${heureActuelle}h`);
+    const bouchonSoir = calculerBouchonSoir(dateJour, nomCompte, jour);
+    const noteBouchon = bouchonSoir === 23
+        ? `bouchon de fin : 23h`
+        : `bouchon de fin : ${bouchonSoir}h (vérifié demain, tôt le matin)`;
+    console.log(`[${nomCompte}] Planning du jour (Europe/Paris) : ${fenetres.join('h, ')}h — ${noteBouchon} — heure actuelle : ${heureActuelle}h`);
     return fenetres.includes(heureActuelle);
 }
 
