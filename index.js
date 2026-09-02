@@ -148,10 +148,18 @@ function sessionActivePourCetteHeure(nomCompte) {
 
     const fenetres = genererFenetresDuJour(nomCompte);
     const bouchonSoir = calculerBouchonSoir(dateJour, nomCompte, jour);
-    const noteBouchon = bouchonSoir === 23
-        ? `bouchon de fin : 23h`
-        : `bouchon de fin : ${bouchonSoir}h (vérifié demain, tôt le matin)`;
-    console.log(`[${nomCompte}] Planning du jour (Europe/Paris) : ${fenetres.join('h, ')}h — ${noteBouchon} — heure actuelle : ${heureActuelle}h`);
+
+    const candidatsAujourdhui = fenetres.filter(h => h > heureActuelle);
+    let prochainLancement;
+    if (candidatsAujourdhui.length > 0) {
+        prochainLancement = `${Math.min(...candidatsAujourdhui)}h aujourd'hui`;
+    } else if (bouchonSoir === 0 || bouchonSoir === 1) {
+        prochainLancement = `${bouchonSoir}h cette nuit`;
+    } else {
+        prochainLancement = `8h demain matin`;
+    }
+
+    console.log(`[${nomCompte}] Planning du jour (Europe/Paris) : ${fenetres.join('h, ')}h — heure actuelle : ${heureActuelle}h — prochain lancement : ${prochainLancement}`);
     return fenetres.includes(heureActuelle);
 }
 
